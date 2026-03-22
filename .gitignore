@@ -20,3 +20,7 @@ ENV/
 *.swp
 .DS_Store
 Thumbs.db
+
+openclaw_workspace/
+openclaw_workspace/.openclaw/
+openclaw_workspace/workspace-state.json

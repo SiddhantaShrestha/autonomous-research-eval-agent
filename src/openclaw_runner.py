@@ -1,5 +1,5 @@
 """
-CLI entrypoint: orchestrate retrieval, draft, evaluation, conditional revision, and outputs.
+OpenClaw-oriented entrypoint: same pipeline as ``main.py``, with OpenClaw agent labels in the log.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ console = Console()
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Research evaluation agent: draft, evaluate, revise using Groq."
+        description="OpenClaw wrapper: research evaluation pipeline (same outputs as main.py)."
     )
     parser.add_argument(
         "query",
@@ -37,7 +37,8 @@ def main() -> int:
         console.print("[red]Error:[/red] Query must not be empty.")
         return 1
 
-    return run_research_pipeline(query, console, openclaw_branding=False)
+    console.print("[bold]OpenClaw — research evaluation pipeline[/bold]\n")
+    return run_research_pipeline(query, console, openclaw_branding=True)
 
 
 if __name__ == "__main__":
