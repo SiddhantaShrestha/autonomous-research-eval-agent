@@ -45,10 +45,11 @@ export async function POST(req: Request) {
     }
     const script = getPipelineScript();
     if (!existsSync(script)) {
-      return Response.json(
-        { error: "Pipeline script not found. Set RESEARCH_AGENT_ROOT to the repo root." },
-        { status: 500 }
-      );
+      const onVercel = process.env.VERCEL === "1";
+      const error = onVercel
+        ? "This host does not run the Python pipeline. In Vercel → Settings → Environment Variables, set NEXT_PUBLIC_API_URL to your Render API origin (e.g. https://your-service.onrender.com, no trailing slash), then redeploy. The browser must call Render directly."
+        : "Pipeline script not found. Set RESEARCH_AGENT_ROOT to the repo root.";
+      return Response.json({ error }, { status: 500 });
     }
 
     const payload = JSON.stringify({ query, file: tempPath });
