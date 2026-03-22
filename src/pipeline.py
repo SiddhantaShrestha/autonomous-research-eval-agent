@@ -6,6 +6,7 @@ Shared orchestration for the research evaluation pipeline
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from agents.evaluation_agent import evaluate_report
 from agents.grounding_agent import audit_grounding
 from agents.research_agent import generate_draft_report
 from agents.revision_agent import revise_report
+from schemas.grounding_audit_schema import GroundingAuditResult
 from tools.retrieval_tool import ChunkHit, retrieve
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -23,6 +25,52 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 DATA_DIR = PROJECT_ROOT / "data"
 
 REVISION_SCORE_THRESHOLD = 8.0
+
+
+@dataclass(frozen=True)
+class PipelineRunResult:
+    """In-memory results from retrieval through grounding (e.g. Streamlit UI)."""
+
+    chunks: list[ChunkHit]
+    draft: str
+    final_report: str
+    evaluation_json: str
+    revision_skipped: bool
+    grounding: GroundingAuditResult
+
+
+def run_stages_for_uploaded_file(query: str, uploaded_path: Path) -> PipelineRunResult:
+    """
+    Run the same LLM stages as the CLI for a single on-disk document (e.g. temp upload).
+    Loads ``.env``, retrieves chunks, drafts, evaluates, revises conditionally, runs grounding audit.
+    """
+    load_dotenv(PROJECT_ROOT / ".env")
+    q = query.strip()
+    if not q:
+        raise RuntimeError("Query must not be empty.")
+    up = uploaded_path.resolve()
+    if not up.is_file():
+        raise RuntimeError(f"Uploaded path is not a file: {up}")
+
+    chunks = retrieve(q, single_file=up, top_k=5)
+    draft = generate_draft_report(q, chunks)
+    evaluation_json = evaluate_report(q, draft)
+    score = float(json.loads(evaluation_json)["score"])
+    if score >= REVISION_SCORE_THRESHOLD:
+        final_md = draft
+        revision_skipped = True
+    else:
+        final_md = revise_report(q, draft, evaluation_json)
+        revision_skipped = False
+    grounding = audit_grounding(q, final_md, chunks)
+    return PipelineRunResult(
+        chunks=chunks,
+        draft=draft,
+        final_report=final_md,
+        evaluation_json=evaluation_json,
+        revision_skipped=revision_skipped,
+        grounding=grounding,
+    )
 
 
 def _write_text(path: Path, text: str) -> None:

@@ -4,6 +4,27 @@
 
 This project is a **command-line research pipeline** that turns a natural-language query and a local evidence corpus into a structured markdown report, **critiques** that report with a **structured JSON evaluation**, and optionally **revises** the draft based on that feedback. Retrieval is fully **local** (no vector DB required for the baseline); generation, evaluation, and revision use the **Groq API** (`llama-3.3-70b-versatile`).
 
+You can run it from the **CLI**, a **Streamlit** upload UI (`app.py`), or a **Next.js** web app under `web/` that calls the same Python pipeline via a local API route.
+
+## Tech stack
+
+| Layer | Technologies |
+| ----- | ------------ |
+| **Language (backend)** | Python 3 |
+| **LLM / API** | [Groq](https://groq.com/) (`groq` SDK, HTTP via `httpx`) — research, evaluation, revision, and grounding agents |
+| **Validation & schemas** | Pydantic v2 (`pydantic`, `pydantic_core`) |
+| **CLI** | Typer + Rich |
+| **Env** | `python-dotenv` (`.env` at repo root) |
+| **Documents** | `pypdf` for PDFs; plain text / markdown loaders in `src/tools/` |
+| **Optional UI (Python)** | Streamlit (`streamlit run app.py`) — single-file upload + query |
+| **Web UI** | **Next.js 14** (App Router), **React 18**, **TypeScript**, **Tailwind CSS 3** |
+| **Web → Python bridge** | Next.js route `web/app/api/evaluate` spawns the repo venv Python and `scripts/pipeline_json_stdout.py`, passing query + temp file path; stdout is JSON consumed by the UI |
+| **Other Python deps** | See `requirements.txt` (e.g. `tenacity`, `requests`; some packages are shared/transitive dependencies) |
+
+**Model note:** Default Groq chat model is set in `src/agents/groq_client.py` (`MODEL`, e.g. `llama-3.3-70b-versatile`); change it there if you switch models.
+
+**Prerequisites:** Python 3 with `pip` (venv recommended). For the **web** app, **Node.js 18+** and **npm** (or compatible package manager).
+
 The design separates **retrieval**, **research (drafting)**, **evaluation**, and **revision** into explicit stages so each step can be inspected, logged, and extended independently.
 
 ## OpenClaw-Oriented Mode
@@ -62,12 +83,20 @@ Final markdown + grounding audit + summary
 ```
 
 research-eval-agent/
+├── app.py                   # Streamlit UI (upload + query → pipeline)
 ├── data/                    # Default corpus (.txt, .md, .pdf)
 ├── outputs/                 # Run artifacts (gitignored)
+├── scripts/
+│   └── pipeline_json_stdout.py   # JSON-on-stdout entry for the Next.js API
+├── web/                     # Next.js app (research evaluation results UI)
+│   ├── app/                 # App Router: page + /api/evaluate
+│   ├── components/
+│   ├── lib/
+│   └── package.json
 ├── src/
 │   ├── main.py              # CLI
-│   ├── openclaw_runner.py  # OpenClaw-styled CLI
-│   ├── pipeline.py          # Shared orchestration
+│   ├── openclaw_runner.py   # OpenClaw-styled CLI
+│   ├── pipeline.py          # Shared orchestration (+ upload path for API/Streamlit)
 │   ├── agents/
 │   ├── prompts/
 │   ├── schemas/
@@ -101,11 +130,36 @@ research-eval-agent/
 
 5. **Configure environment variables** (see next section).
 
+### Next.js web UI (optional)
+
+From the repo root, with the same Python venv and `.env` as above:
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Open the URL shown in the terminal (usually `http://localhost:3000`). The UI uploads a document, sends a query to `POST /api/evaluate`, and displays evaluation scores, report tabs, and actions.
+
+**Path resolution:** The API looks for the repository root as the parent of `web/` by default. If you run Next from a different layout, set **`RESEARCH_AGENT_ROOT`** to the absolute path of this repo so Python can find `scripts/pipeline_json_stdout.py` and `.venv`.
+
+### Streamlit UI (optional)
+
+From the **project root** with venv activated:
+
+```bash
+streamlit run app.py
+```
+
+Upload a `.txt`, `.md`, or `.pdf`, enter a query, and run the same pipeline as the CLI (single-document flow).
+
 ## Environment Variables
 
-| Variable       | Required | Description                                                            |
-| -------------- | -------- | ---------------------------------------------------------------------- |
-| `GROQ_API_KEY` | Yes      | API key for [Groq](https://console.groq.com/). Used by all LLM agents. |
+| Variable               | Required | Description                                                                 |
+| ---------------------- | -------- | ----------------------------------------------------------------------------- |
+| `GROQ_API_KEY`         | Yes      | API key for [Groq](https://console.groq.com/). Used by all LLM agents.        |
+| `RESEARCH_AGENT_ROOT`  | No       | Absolute path to this repo. Used by the Next.js app if the default parent-of-`web/` root is wrong. |
 
 Create a `.env` file in the project root (same directory as `requirements.txt`):
 
