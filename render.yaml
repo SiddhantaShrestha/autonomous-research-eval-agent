@@ -1,0 +1,14 @@
+# Render Blueprint — optional. Adjust name/region in the Render dashboard as needed.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: research-eval-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn render_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false

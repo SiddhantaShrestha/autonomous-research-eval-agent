@@ -4,7 +4,7 @@
 
 This project is a **command-line research pipeline** that turns a natural-language query and a local evidence corpus into a structured markdown report, **critiques** that report with a **structured JSON evaluation**, and optionally **revises** the draft based on that feedback. Retrieval is fully **local** (no vector DB required for the baseline); generation, evaluation, and revision use the **Groq API** (`llama-3.3-70b-versatile`).
 
-You can run it from the **CLI**, a **Streamlit** upload UI (`app.py`), or a **Next.js** web app under `web/` that calls the same Python pipeline via a local API route.
+You can run it from the **CLI**, a **Streamlit** upload UI (`app.py`), or a **Next.js** web app under `web/` that calls the pipeline either via a **local** Next API route or a **deployed** Python API (e.g. **Render** + **Vercel** — see [Deploy: Render + Vercel](#deploy-render-api--vercel-frontend)).
 
 ## Tech stack
 
@@ -18,7 +18,7 @@ You can run it from the **CLI**, a **Streamlit** upload UI (`app.py`), or a **Ne
 | **Documents** | `pypdf` for PDFs; plain text / markdown loaders in `src/tools/` |
 | **Optional UI (Python)** | Streamlit (`streamlit run app.py`) — single-file upload + query |
 | **Web UI** | **Next.js 14** (App Router), **React 18**, **TypeScript**, **Tailwind CSS 3** |
-| **Web → Python bridge** | Next.js route `web/app/api/evaluate` spawns the repo venv Python and `scripts/pipeline_json_stdout.py`, passing query + temp file path; stdout is JSON consumed by the UI |
+| **Web → Python bridge** | **Local:** Next.js route `web/app/api/evaluate` spawns the repo venv Python and `scripts/pipeline_json_stdout.py`. **Production:** FastAPI app `render_api/main.py` exposes `POST /api/evaluate`; set `NEXT_PUBLIC_API_URL` on Vercel to the Render service URL |
 | **Other Python deps** | See `requirements.txt` (e.g. `tenacity`, `requests`; some packages are shared/transitive dependencies) |
 
 **Model note:** Default Groq chat model is set in `src/agents/groq_client.py` (`MODEL`, e.g. `llama-3.3-70b-versatile`); change it there if you switch models.
@@ -86,8 +86,10 @@ research-eval-agent/
 ├── app.py                   # Streamlit UI (upload + query → pipeline)
 ├── data/                    # Default corpus (.txt, .md, .pdf)
 ├── outputs/                 # Run artifacts (gitignored)
+├── render_api/
+│   └── main.py              # FastAPI server for Render (POST /api/evaluate)
 ├── scripts/
-│   └── pipeline_json_stdout.py   # JSON-on-stdout entry for the Next.js API
+│   └── pipeline_json_stdout.py   # JSON-on-stdout entry for the local Next.js API
 ├── web/                     # Next.js app (research evaluation results UI)
 │   ├── app/                 # App Router: page + /api/evaluate
 │   ├── components/
@@ -156,10 +158,12 @@ Upload a `.txt`, `.md`, or `.pdf`, enter a query, and run the same pipeline as t
 
 ## Environment Variables
 
-| Variable               | Required | Description                                                                 |
-| ---------------------- | -------- | ----------------------------------------------------------------------------- |
-| `GROQ_API_KEY`         | Yes      | API key for [Groq](https://console.groq.com/). Used by all LLM agents.        |
-| `RESEARCH_AGENT_ROOT`  | No       | Absolute path to this repo. Used by the Next.js app if the default parent-of-`web/` root is wrong. |
+| Variable               | Where    | Required | Description                                                                 |
+| ---------------------- | -------- | -------- | ----------------------------------------------------------------------------- |
+| `GROQ_API_KEY`         | Repo `.env`, Render | Yes (for LLM) | API key for [Groq](https://console.groq.com/). |
+| `ALLOWED_ORIGINS`      | Render only | No   | Comma-separated origins for CORS (e.g. your Vercel URL). Empty = allow any origin. |
+| `NEXT_PUBLIC_API_URL`  | Vercel, `web/.env.local` | No | Render service origin, no trailing slash. If unset, the Next app uses `/api/evaluate` locally. |
+| `RESEARCH_AGENT_ROOT`  | Local Next only | No | Absolute path to this repo when the default parent-of-`web/` root is wrong. |
 
 Create a `.env` file in the project root (same directory as `requirements.txt`):
 
@@ -168,6 +172,30 @@ GROQ_API_KEY=your_key_here
 ```
 
 The CLI loads `.env` automatically via `python-dotenv`.
+
+### Deploy: Render (API) + Vercel (frontend)
+
+Split deployment uses the **FastAPI** app in `render_api/main.py` on **Render** and the **Next.js** app in `web/` on **Vercel**. The browser calls your Render URL directly (`NEXT_PUBLIC_API_URL`); the Next.js route `web/app/api/evaluate` is only used when that variable is **unset** (local development).
+
+**Render (Python web service)**
+
+1. Create a **Web Service**, connect this repo, **root directory** = repository root.
+2. **Build command:** `pip install -r requirements.txt`
+3. **Start command:** `uvicorn render_api.main:app --host 0.0.0.0 --port $PORT`
+4. **Environment variables** (dashboard):
+   - `GROQ_API_KEY` — required (same as local).
+   - `ALLOWED_ORIGINS` — comma-separated origins allowed for CORS, e.g. `https://your-app.vercel.app` and `http://localhost:3000` for testing. If omitted, the API allows any origin (convenient for experiments; set explicitly for production).
+5. Optional: use `render.yaml` in the repo as a Blueprint. **Health check path:** `/health`.
+
+**Vercel (Next.js)**
+
+1. Import the repo; set **Root Directory** to `web`.
+2. **Environment variable:** `NEXT_PUBLIC_API_URL` = your Render service **origin** with **no trailing slash**, e.g. `https://research-eval-api.onrender.com`. The client builds requests to `${NEXT_PUBLIC_API_URL}/api/evaluate`.
+3. Redeploy after changing env vars.
+
+See `web/.env.example` for the frontend variable. Keep **`GROQ_API_KEY` only on Render** (server-side), not in `NEXT_PUBLIC_*` on Vercel.
+
+**Note:** Free Render instances may spin down when idle; the first request after sleep can take tens of seconds.
 
 ## How to Run
 

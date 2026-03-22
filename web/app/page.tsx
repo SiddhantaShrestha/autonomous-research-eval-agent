@@ -8,6 +8,7 @@ import { EvaluationStats } from "@/components/EvaluationStats";
 import { InsightBar } from "@/components/InsightBar";
 import { ResultsTabs } from "@/components/ResultsTabs";
 import { ResultActions } from "@/components/ResultActions";
+import { getEvaluateUrl } from "@/lib/apiBase";
 import { deriveInsight } from "@/lib/deriveInsight";
 import type { PipelineResponse } from "@/lib/types";
 import { findSection, parseMarkdownSections } from "@/lib/parseReport";
@@ -46,7 +47,7 @@ export default function HomePage() {
       const fd = new FormData();
       fd.set("query", query.trim());
       fd.set("file", file);
-      const res = await fetch("/api/evaluate", { method: "POST", body: fd });
+      const res = await fetch(getEvaluateUrl(), { method: "POST", body: fd });
       const data = (await res.json()) as PipelineResponse & { error?: string };
       if (!res.ok) {
         throw new Error(data.error || `Request failed (${res.status})`);
