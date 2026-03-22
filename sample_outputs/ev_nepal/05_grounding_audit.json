@@ -1,0 +1,17 @@
+{
+  "grounding_score": 7,
+  "supported_points": [
+    "EV adoption in Nepal is increasing, particularly in the Kathmandu region",
+    "Rising fuel costs and consumer interest in lower operating costs are among the drivers of EV adoption growth",
+    "Challenges to EV adoption in Nepal include charging infrastructure gaps, public awareness, and concerns about maintenance and resale value"
+  ],
+  "unsupported_points": [
+    "The exact impact of economic factors and consumer interest on EV adoption",
+    "The current number of EVs on the road",
+    "Specific government policies supporting EV adoption"
+  ],
+  "notes": [
+    "The report acknowledges gaps in detailed statistics and specific government policies",
+    "The evidence provided does not quantify the impact of challenges on adoption rates"
+  ]
+}

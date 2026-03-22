@@ -70,9 +70,14 @@ def run_research_pipeline(
     console: Console,
     *,
     openclaw_branding: bool = False,
+    retrieval_file: Path | None = None,
+    retrieval_data_dir: Path | None = None,
 ) -> int:
     """
     Run retrieval, draft, evaluation, conditional revision, grounding audit, and save outputs.
+
+    Retrieval source: ``retrieval_file`` (single document), ``retrieval_data_dir`` (directory
+    scan), or default ``data/`` when both are None.
 
     ``openclaw_branding`` adds OpenClaw agent labels before research, evaluation,
     revision, and grounding (retrieval unchanged).
@@ -88,11 +93,21 @@ def run_research_pipeline(
 
     try:
         console.print("[1/5] Retrieving evidence...")
-        chunks = retrieve(query, data_dir=DATA_DIR, top_k=5)
+        if retrieval_file is not None:
+            chunks = retrieve(query, single_file=retrieval_file, top_k=5)
+            source_desc = str(retrieval_file)
+        elif retrieval_data_dir is not None:
+            chunks = retrieve(query, data_dir=retrieval_data_dir, top_k=5)
+            source_desc = str(retrieval_data_dir)
+        else:
+            chunks = retrieve(query, top_k=5)
+            source_desc = str(DATA_DIR)
         _write_text(path_chunks, json.dumps(_retrieved_chunks_payload(query, chunks), indent=2))
-        console.print(f"  [green]Saved[/green] {path_chunks} ({len(chunks)} chunk(s) from [cyan]{DATA_DIR}[/cyan])")
+        console.print(f"  [green]Saved[/green] {path_chunks} ({len(chunks)} chunk(s) from [cyan]{source_desc}[/cyan])")
         if not chunks:
-            console.print("  [yellow]Warning:[/yellow] No markdown chunks found; the draft may be limited.")
+            console.print(
+                "  [yellow]Warning:[/yellow] No retrievable chunks (empty corpus, unsupported type, or no overlap)."
+            )
 
         if openclaw_branding:
             console.print("[bold cyan]OpenClaw Research Agent[/bold cyan]")

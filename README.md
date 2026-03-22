@@ -6,59 +6,75 @@ This project is a **command-line research pipeline** that turns a natural-langua
 
 The design separates **retrieval**, **research (drafting)**, **evaluation**, and **revision** into explicit stages so each step can be inspected, logged, and extended independently.
 
+## OpenClaw-Oriented Mode
+
+In addition to the standard CLI pipeline, the project includes an OpenClaw-oriented runner that presents the workflow as explicit agent roles:
+
+- OpenClaw Research Agent
+- OpenClaw Evaluation Agent
+- OpenClaw Revision Agent
+- OpenClaw Grounding Agent
+
+Run it with:
+
+```bash
+python src/openclaw_runner.py "Analyze EV adoption trends in Nepal"
+```
+
 ## Features
 
-- **Local retrieval** — Reads Markdown files from `data/`, splits them into paragraph chunks, ranks chunks by simple keyword overlap with the query, and returns the top passages for grounding.
+- **Local retrieval** — Loads `.txt`, `.md`, and `.pdf` from the default `data/` folder (recursive), or from `--file` / `--data-dir`; splits text into paragraph chunks; ranks by keyword overlap with the query; returns the top passages for grounding. PDFs use **pypdf**; encoding issues and bad PDFs are handled with warnings, not crashes.
 - **Research agent** — Produces a structured markdown draft (executive summary, findings, evidence, gaps, conclusion) using only the retrieved chunks.
 - **Evaluation agent** — Returns **structured JSON** aligned with a Pydantic schema: overall score plus subscores (relevance, completeness, clarity, evidence usage on a 1–10 scale), issues, and suggested fixes. The overall score is normalized to match the mean of the subscores for internal consistency.
 - **Revision agent** — Rewrites the draft using the evaluation JSON when revision runs.
 - **Conditional revision** — If the evaluation score is **≥ 8.0** (configurable threshold in code), the revision step is **skipped** and the final report is the draft; otherwise the reviser runs.
-- **Traceable outputs** — Each run writes numbered artifacts under `outputs/`, including retrieved chunks, draft, evaluation, final report, and a run summary with timestamps and revision flags.
+- **Traceable outputs** — Each run writes numbered artifacts under `outputs/`, including retrieved chunks, draft, evaluation, final report, **grounding audit JSON**, and a run summary (with optional `grounding_score`).
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────────┐     ┌──────────────────┐
-│   Local     │     │  Research       │     │  Evaluation      │
-│  retrieval  │────▶│  agent (Groq)   │────▶│  agent (Groq)    │
-│  (data/*.md)│     │  draft MD       │     │  JSON + schema   │
-└─────────────┘     └────────┬────────┘     └────────┬─────────┘
-                             │                      │
-                             │            score < 8?  │
-                             │                      ▼
-                             │              ┌───────────────┐
-                             └──────────────│ Revision      │
-                                   (skip)    │ agent (Groq)  │
-                                            └───────┬───────┘
-                                                    ▼
-                                            Final markdown + summary
+
+┌─────────────┐ ┌─────────────────┐ ┌──────────────────┐
+│ Local │ │ Research │ │ Evaluation │
+│ retrieval │────▶│ agent (Groq) │────▶│ agent (Groq) │
+│ (.txt/.md/.pdf)│ │ draft MD │ │ JSON + schema │
+└─────────────┘ └────────┬────────┘ └────────┬─────────┘
+│ │
+│ score < 8? │
+│ ▼
+│ ┌───────────────┐
+└──────────────│ Revision │
+(skip) │ agent (Groq) │
+└───────┬───────┘
+▼
+Final markdown + grounding audit + summary
+
 ```
 
-- **`src/main.py`** — Orchestrates the pipeline only: CLI, file I/O, conditional revision, run summary.
-- **`src/agents/`** — One module per agent (`research_agent`, `evaluation_agent`, `revision_agent`) plus shared **`groq_client`** (chat completions) and **`prompt_loader`** (optional overrides from `src/prompts/*.txt`).
-- **`src/tools/retrieval_tool.py`** — Paragraph-level retrieval and scoring.
-- **`src/schemas/evaluation_schema.py`** — Pydantic model for validated evaluation JSON.
+- **`src/main.py`** / **`src/openclaw_runner.py`** — CLI entrypoints; call **`src/pipeline.py`** for orchestration.
+- **`src/pipeline.py`** — Retrieval → draft → evaluate → conditional revise → grounding audit → numbered outputs.
+- **`src/agents/`** — Research, evaluation, revision, and **grounding** agents; shared **`groq_client`** and **`prompt_loader`**.
+- **`src/tools/retrieval_tool.py`** & **`document_loaders.py`** — Load `.txt` / `.md` / `.pdf`, paragraph chunking, keyword scoring.
+- **`src/schemas/`** — **`evaluation_schema`**, **`grounding_audit_schema`** (Pydantic validation).
 
 ## Folder Structure
 
 ```
+
 research-eval-agent/
-├── data/                    # Markdown sources for retrieval (e.g. *.md)
-├── outputs/                 # Run artifacts (see below)
+├── data/                    # Default corpus (.txt, .md, .pdf)
+├── outputs/                 # Run artifacts (gitignored)
 ├── src/
-│   ├── main.py              # CLI orchestrator
+│   ├── main.py              # CLI
+│   ├── openclaw_runner.py  # OpenClaw-styled CLI
+│   ├── pipeline.py          # Shared orchestration
 │   ├── agents/
-│   │   ├── groq_client.py   # Shared Groq client + chat helper
-│   │   ├── prompt_loader.py # Loads src/prompts/{agent}.txt when present
-│   │   ├── research_agent.py
-│   │   ├── evaluation_agent.py
-│   │   └── revision_agent.py
-│   ├── prompts/             # Optional prompt overrides (researcher, evaluator, reviser)
+│   ├── prompts/
 │   ├── schemas/
-│   │   └── evaluation_schema.py
 │   └── tools/
-│       └── retrieval_tool.py
-├── .env                     # Local secrets (not committed)
+│       ├── retrieval_tool.py
+│       └── document_loaders.py
+├── .env
 ├── requirements.txt
 └── README.md
 ```
@@ -74,7 +90,6 @@ research-eval-agent/
    ```
 
 3. **Activate** the environment (examples):
-
    - Windows (PowerShell): `.venv\Scripts\Activate.ps1`
    - macOS/Linux: `source .venv/bin/activate`
 
@@ -88,9 +103,9 @@ research-eval-agent/
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GROQ_API_KEY` | Yes | API key for [Groq](https://console.groq.com/). Used by all LLM agents. |
+| Variable       | Required | Description                                                            |
+| -------------- | -------- | ---------------------------------------------------------------------- |
+| `GROQ_API_KEY` | Yes      | API key for [Groq](https://console.groq.com/). Used by all LLM agents. |
 
 Create a `.env` file in the project root (same directory as `requirements.txt`):
 
@@ -102,25 +117,40 @@ The CLI loads `.env` automatically via `python-dotenv`.
 
 ## How to Run
 
-From the **project root**, pass the research question as positional arguments (words are joined into one query string):
+From the **project root**, pass the research question as positional arguments (words are joined into one query string).
+
+**Default corpus** (recursive scan of `data/` for `.txt`, `.md`, `.pdf`):
 
 ```bash
 python src/main.py What are the main factors in Nepal electric vehicle adoption?
 ```
 
-The pipeline prints four stages (`[1/4]` … `[4/4]`) and writes files under `outputs/`. If evaluation score is below the revision threshold, you will see whether the reviser changed the draft or left it unchanged.
+**Single file** (mutually exclusive with `--data-dir`):
+
+```bash
+python src/main.py --file path/to/report.pdf Your question here
+```
+
+**Custom directory** (recursive scan; mutually exclusive with `--file`):
+
+```bash
+python src/main.py --data-dir path/to/corpus Your question here
+```
+
+The pipeline prints five stages (`[1/5]` … `[5/5]`) and writes files under `outputs/`. If the evaluation score is below the revision threshold, the log shows whether the reviser changed the draft. **`openclaw_runner.py`** accepts the same `--file` / `--data-dir` options.
 
 ## Example Output Files
 
 After a successful run, `outputs/` typically contains:
 
-| File | Description |
-|------|-------------|
-| `00_retrieved_chunks.json` | Query plus ranked chunks (filename, text, retrieval score). |
-| `01_draft_report.md` | Markdown draft from the **research agent**. |
-| `02_evaluation.json` | **Structured JSON evaluation** (scores, issues, suggested fixes). |
-| `03_final_report.md` | Final report: either the revised draft or a copy of the draft if revision was skipped. |
-| `04_run_summary.json` | Query, chunk counts, unique source files, evaluation score, revision skipped/applied flags, ISO timestamp. |
+| File                       | Description                                                                                                |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `00_retrieved_chunks.json` | Query plus ranked chunks (filename, text, retrieval score).                                                |
+| `01_draft_report.md`       | Markdown draft from the **research agent**.                                                                |
+| `02_evaluation.json`       | **Structured JSON evaluation** (scores, issues, suggested fixes).                                          |
+| `03_final_report.md`       | Final report: either the revised draft or a copy of the draft if revision was skipped.                     |
+| `04_run_summary.json`      | Query, chunk counts, unique sources, evaluation score, revision flags, **`grounding_score`** (when audit ran), ISO timestamp. |
+| `05_grounding_audit.json`  | Grounding audit: supported/unsupported points, notes, `grounding_score` (1–10).                            |
 
 Older filenames (`draft_report.md`, `evaluation.json`, etc.) are legacy; the numbered convention is what the current orchestrator writes.
 
@@ -140,8 +170,8 @@ Together, these properties match a practical notion of **agentic** systems: modu
 - **Configurable thresholds and models** — CLI flags or config file for revision cutoff, `top_k`, temperature, and model name.
 - **Tests** — Unit tests for retrieval scoring and evaluation JSON validation; integration tests with mocked LLM responses.
 - **Observability** — Structured logging, optional export of token usage, and run IDs for comparing experiments.
-- **Multi-format corpora** — Ingest PDF or HTML with preprocessing while keeping the same agent contract.
+- **More formats** — HTML or DOCX ingestion with preprocessing while keeping the same agent contract.
 
 ---
 
-*Portfolio note: This README describes the intended behavior of the repository as implemented in `src/`; extend the “Future Improvements” section as you ship features.*
+_Portfolio note: This README describes the intended behavior of the repository as implemented in `src/`; extend the “Future Improvements” section as you ship features._

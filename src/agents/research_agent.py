@@ -18,7 +18,7 @@ def generate_draft_report(query: str, chunks: list[ChunkHit]) -> str:
         "Supporting Evidence (cite by filename); Gaps and Uncertainties; Conclusion.",
     )
     if not chunks:
-        evidence = "(No passages were retrieved from data/.)"
+        evidence = "(No passages were retrieved from the corpus.)"
     else:
         lines = [
             f"### Source {i}: {h.filename} (score={h.score:.3f})\n{h.chunk}"

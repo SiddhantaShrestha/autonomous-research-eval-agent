@@ -1,14 +1,25 @@
 """
-Local paragraph-level retrieval over Markdown files in ``data/``.
+Local paragraph-level retrieval over text sources in ``data/`` (or a chosen file or directory).
 
 Chunks are paragraphs; scoring is simple query–chunk keyword overlap.
+Supported formats: ``.txt``, ``.md``, ``.pdf`` (see ``document_loaders``).
 """
 
 from __future__ import annotations
 
+import logging
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+_SRC = Path(__file__).resolve().parent.parent
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from tools.document_loaders import SUPPORTED_SUFFIXES, load_document
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -31,7 +42,7 @@ def _tokenize(text: str) -> set[str]:
 
 
 def _split_paragraphs(text: str) -> list[str]:
-    """Split Markdown body into paragraph chunks (blank-line separated)."""
+    """Split body into paragraph chunks (blank-line separated)."""
     parts = re.split(r"\n\s*\n", text.strip())
     return [p.strip() for p in parts if p.strip()]
 
@@ -47,35 +58,70 @@ def _overlap_score(query_words: set[str], chunk_words: set[str]) -> float:
     return len(query_words & chunk_words) / len(query_words)
 
 
-def _read_markdown_files(data_dir: Path) -> list[tuple[str, str]]:
-    """Load all ``*.md`` files from ``data_dir``; returns (filename, contents)."""
-    if not data_dir.is_dir():
+def _display_name(root: Path, path: Path) -> str:
+    """Stable label for chunks (basename for single file; relative path under root for dirs)."""
+    try:
+        rel = path.resolve().relative_to(root.resolve())
+        return rel.as_posix()
+    except ValueError:
+        return path.name
+
+
+def _iter_supported_paths(root: Path) -> list[Path]:
+    """All supported files under ``root`` (recursive)."""
+    if not root.is_dir():
         return []
-    out: list[tuple[str, str]] = []
-    for path in sorted(data_dir.glob("*.md")):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        out.append((path.name, text))
+    out: list[Path] = []
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES:
+            out.append(p)
     return out
+
+
+def _collect_from_directory(data_dir: Path) -> list[tuple[str, str]]:
+    """Load (display_name, text) for every supported file under ``data_dir``."""
+    pairs: list[tuple[str, str]] = []
+    for path in _iter_supported_paths(data_dir):
+        text = load_document(path)
+        if text is None:
+            continue
+        pairs.append((_display_name(data_dir, path), text))
+    return pairs
+
+
+def _collect_from_single_file(path: Path) -> list[tuple[str, str]]:
+    """Load one file if supported and non-empty."""
+    path = path.resolve()
+    text = load_document(path)
+    if text is None:
+        return []
+    return [(path.name, text)]
 
 
 def retrieve(
     query: str,
     data_dir: Path | None = None,
     *,
+    single_file: Path | None = None,
     top_k: int = 5,
 ) -> list[ChunkHit]:
     """
-    Score every paragraph in every ``*.md`` file under ``data_dir`` against ``query``,
-    then return the top ``top_k`` chunks by keyword overlap score.
-    """
-    root = data_dir if data_dir is not None else _default_data_dir()
-    query_words = _tokenize(query)
+    Score every paragraph in the selected corpus against ``query``, then return the top
+    ``top_k`` chunks by keyword overlap.
 
+    - If ``single_file`` is set, only that file is used (must be ``.txt``, ``.md``, or ``.pdf``).
+    - Otherwise all supported files under ``data_dir`` are loaded (recursive). If
+      ``data_dir`` is None, the project ``data/`` folder is used.
+    """
+    if single_file is not None:
+        docs = _collect_from_single_file(single_file)
+    else:
+        root = data_dir if data_dir is not None else _default_data_dir()
+        docs = _collect_from_directory(root)
+
+    query_words = _tokenize(query)
     candidates: list[ChunkHit] = []
-    for filename, raw in _read_markdown_files(root):
+    for filename, raw in docs:
         for para in _split_paragraphs(raw):
             cw = _tokenize(para)
             sc = _overlap_score(query_words, cw)
