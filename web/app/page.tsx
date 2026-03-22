@@ -111,6 +111,12 @@ export default function HomePage() {
             />
             <p className="mt-4 text-sm font-medium text-zinc-200">Running evaluation…</p>
             <p className="mt-1 text-xs text-muted">{LOADING_STEPS[loadingStepIdx]}</p>
+            {getEvaluateUrl().startsWith("http") && (
+              <p className="mx-auto mt-4 max-w-md text-xs leading-relaxed text-muted-dim">
+                Using the hosted API can take a few minutes: cold start on free tiers, then several AI
+                steps (draft, evaluation, revision, grounding). Keep this tab open.
+              </p>
+            )}
           </section>
         )}
 

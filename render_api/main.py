@@ -7,7 +7,9 @@ Same JSON shape as scripts/pipeline_json_stdout.py stdout.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -22,6 +24,8 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 MAX_BYTES = 10 * 1024 * 1024
+
+logger = logging.getLogger("render_api.evaluate")
 
 app = FastAPI(title="Research evaluation API", version="1.0.0")
 
@@ -89,12 +93,25 @@ async def evaluate(
 
         from pipeline import run_stages_for_uploaded_file
 
+        def _run_pipeline():
+            return run_stages_for_uploaded_file(q, tmp_path)
+
+        logger.info(
+            "evaluate start query_len=%d file=%s bytes=%d",
+            len(q),
+            file.filename,
+            len(body),
+        )
         try:
-            r = run_stages_for_uploaded_file(q, tmp_path)
+            # Avoid blocking the ASGI event loop during long Groq / PDF work.
+            r = await asyncio.to_thread(_run_pipeline)
         except RuntimeError as e:
+            logger.warning("evaluate runtime error: %s", e)
             raise HTTPException(status_code=400, detail=str(e)) from e
         except OSError as e:
+            logger.warning("evaluate os error: %s", e)
             raise HTTPException(status_code=400, detail=f"File error: {e}") from e
+        logger.info("evaluate done chunks=%d", len(r.chunks))
 
         ev = json.loads(r.evaluation_json)
         out: dict = {

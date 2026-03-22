@@ -6,6 +6,17 @@ This project is a **command-line research pipeline** that turns a natural-langua
 
 You can run it from the **CLI**, a **Streamlit** upload UI (`app.py`), or a **Next.js** web app under `web/` that calls the pipeline either via a **local** Next API route or a **deployed** Python API (e.g. **Render** + **Vercel** — see [Deploy: Render + Vercel](#deploy-render-api--vercel-frontend)).
 
+### Live demo
+
+A hosted instance is available for trying the web UI against a remote API (same stack as in [Deploy: Render + Vercel](#deploy-render-api--vercel-frontend)):
+
+| | Link |
+| --- | --- |
+| **Web app (Vercel)** | [autonomous-research-eval-agent.vercel.app](https://autonomous-research-eval-agent.vercel.app) |
+| **API health (Render)** | [research-eval-agent-api.onrender.com/health](https://research-eval-agent-api.onrender.com/health) |
+
+The API may be slow on the first request after idle time on a free tier (cold start). Replace these URLs in the README if you use different deployment domains.
+
 ## Tech stack
 
 | Layer | Technologies |
@@ -162,7 +173,7 @@ Upload a `.txt`, `.md`, or `.pdf`, enter a query, and run the same pipeline as t
 | ---------------------- | -------- | -------- | ----------------------------------------------------------------------------- |
 | `GROQ_API_KEY`         | Repo `.env`, Render | Yes (for LLM) | API key for [Groq](https://console.groq.com/). |
 | `ALLOWED_ORIGINS`      | Render only | No   | Comma-separated origins for CORS (e.g. your Vercel URL). Empty = allow any origin. |
-| `NEXT_PUBLIC_API_URL`  | Vercel, `web/.env.local` | No | Render service origin, no trailing slash. If unset, the Next app uses `/api/evaluate` locally. |
+| `NEXT_PUBLIC_API_URL` or `NEXT_PUBLIC_API_BASE_URL` | Vercel, `web/.env.local` | No | Render service origin, no trailing slash (either name works). If unset, the Next app uses `/api/evaluate` locally. |
 | `RESEARCH_AGENT_ROOT`  | Local Next only | No | Absolute path to this repo when the default parent-of-`web/` root is wrong. |
 
 Create a `.env` file in the project root (same directory as `requirements.txt`):
@@ -181,7 +192,8 @@ Split deployment uses the **FastAPI** app in `render_api/main.py` on **Render** 
 
 1. Create a **Web Service**, connect this repo, **root directory** = repository root.
 2. **Build command:** `pip install -r requirements.txt`
-3. **Start command:** `uvicorn render_api.main:app --host 0.0.0.0 --port $PORT`
+3. **Start command:** `uvicorn render_api.main:app --host 0.0.0.0 --port $PORT`  
+   Do **not** use `uvicorn app:app` — there is no `app.py` ASGI module; the FastAPI instance is **`app`** inside **`render_api/main.py`**. If deploy logs say `Attribute "app" not found in module "app"`, fix the start command here and redeploy.
 4. **Environment variables** (dashboard):
    - `GROQ_API_KEY` — required (same as local).
    - `ALLOWED_ORIGINS` — comma-separated origins allowed for CORS, e.g. `https://your-app.vercel.app` and `http://localhost:3000` for testing. If omitted, the API allows any origin (convenient for experiments; set explicitly for production).
@@ -190,7 +202,7 @@ Split deployment uses the **FastAPI** app in `render_api/main.py` on **Render** 
 **Vercel (Next.js)**
 
 1. Import the repo; set **Root Directory** to `web`.
-2. **Environment variable:** `NEXT_PUBLIC_API_URL` = your Render service **origin** with **no trailing slash**, e.g. `https://research-eval-api.onrender.com`. The client builds requests to `${NEXT_PUBLIC_API_URL}/api/evaluate`.
+2. **Environment variable:** `NEXT_PUBLIC_API_URL` **or** `NEXT_PUBLIC_API_BASE_URL` = your Render service **origin** with **no trailing slash**, e.g. `https://research-eval-api.onrender.com`. The client calls `{origin}/api/evaluate`.
 3. Redeploy after changing env vars.
 
 See `web/.env.example` for the frontend variable. Keep **`GROQ_API_KEY` only on Render** (server-side), not in `NEXT_PUBLIC_*` on Vercel.
