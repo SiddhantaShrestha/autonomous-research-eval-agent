@@ -1,5 +1,6 @@
 """
-OpenClaw-oriented entrypoint: same pipeline as ``main.py``, with OpenClaw agent labels in the log.
+OpenClaw-oriented entrypoint: same pipeline as ``main.py`` (including grounding audit),
+with OpenClaw agent labels in the log.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ _SRC = Path(__file__).resolve().parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from agents.grounding_agent import audit_grounding  # noqa: F401
 from pipeline import run_research_pipeline  # noqa: E402
 
 rich_traceback_install(show_locals=False)
@@ -24,7 +26,7 @@ console = Console()
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="OpenClaw wrapper: research evaluation pipeline (same outputs as main.py)."
+        description="OpenClaw wrapper: full pipeline including grounding audit (same outputs as main.py)."
     )
     parser.add_argument(
         "query",

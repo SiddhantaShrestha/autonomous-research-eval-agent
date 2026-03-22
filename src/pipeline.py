@@ -1,5 +1,6 @@
 """
-Shared orchestration for the research evaluation pipeline (retrieval → draft → evaluate → revise).
+Shared orchestration for the research evaluation pipeline
+(retrieval → draft → evaluate → revise → grounding audit).
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 
 from agents.evaluation_agent import evaluate_report
+from agents.grounding_agent import audit_grounding
 from agents.research_agent import generate_draft_report
 from agents.revision_agent import revise_report
 from tools.retrieval_tool import ChunkHit, retrieve
@@ -45,9 +47,10 @@ def _run_summary(
     final_md: str,
     *,
     revision_skipped: bool,
+    grounding_score: int | None = None,
 ) -> dict:
     ev = json.loads(evaluation_json)
-    return {
+    out: dict = {
         "query": query,
         "retrieved_chunk_count": len(chunks),
         "unique_retrieved_files": sorted({h.filename for h in chunks}),
@@ -57,6 +60,9 @@ def _run_summary(
         and (draft.strip() != final_md.strip()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if grounding_score is not None:
+        out["grounding_score"] = grounding_score
+    return out
 
 
 def run_research_pipeline(
@@ -66,10 +72,10 @@ def run_research_pipeline(
     openclaw_branding: bool = False,
 ) -> int:
     """
-    Run retrieval, draft, evaluation, conditional revision, and save numbered outputs.
+    Run retrieval, draft, evaluation, conditional revision, grounding audit, and save outputs.
 
-    ``openclaw_branding`` adds OpenClaw agent labels before the research, evaluation,
-    and revision stages (retrieval unchanged).
+    ``openclaw_branding`` adds OpenClaw agent labels before research, evaluation,
+    revision, and grounding (retrieval unchanged).
     """
     load_dotenv(PROJECT_ROOT / ".env")
 
@@ -77,10 +83,11 @@ def run_research_pipeline(
     path_draft = OUTPUTS_DIR / "01_draft_report.md"
     path_eval = OUTPUTS_DIR / "02_evaluation.json"
     path_final = OUTPUTS_DIR / "03_final_report.md"
+    path_grounding = OUTPUTS_DIR / "05_grounding_audit.json"
     path_summary = OUTPUTS_DIR / "04_run_summary.json"
 
     try:
-        console.print("[1/4] Retrieving evidence...")
+        console.print("[1/5] Retrieving evidence...")
         chunks = retrieve(query, data_dir=DATA_DIR, top_k=5)
         _write_text(path_chunks, json.dumps(_retrieved_chunks_payload(query, chunks), indent=2))
         console.print(f"  [green]Saved[/green] {path_chunks} ({len(chunks)} chunk(s) from [cyan]{DATA_DIR}[/cyan])")
@@ -89,14 +96,14 @@ def run_research_pipeline(
 
         if openclaw_branding:
             console.print("[bold cyan]OpenClaw Research Agent[/bold cyan]")
-        console.print("[2/4] Generating draft report...")
+        console.print("[2/5] Generating draft report...")
         draft = generate_draft_report(query, chunks)
         _write_text(path_draft, draft)
         console.print(f"  [green]Saved[/green] {path_draft}")
 
         if openclaw_branding:
             console.print("[bold cyan]OpenClaw Evaluation Agent[/bold cyan]")
-        console.print("[3/4] Evaluating report quality...")
+        console.print("[3/5] Evaluating report quality...")
         evaluation_json = evaluate_report(query, draft)
         _write_text(path_eval, evaluation_json)
         console.print(f"  [green]Saved[/green] {path_eval}")
@@ -104,7 +111,7 @@ def run_research_pipeline(
         score = float(json.loads(evaluation_json)["score"])
         if openclaw_branding:
             console.print("[bold cyan]OpenClaw Revision Agent[/bold cyan]")
-        console.print("[4/4] Finalizing report...")
+        console.print("[4/5] Finalizing report...")
         if score >= REVISION_SCORE_THRESHOLD:
             final_md = draft
             console.print(
@@ -128,8 +135,24 @@ def run_research_pipeline(
         _write_text(path_final, final_md)
         console.print(f"  [green]Saved[/green] {path_final}")
 
+        if openclaw_branding:
+            console.print("[bold cyan]OpenClaw Grounding Agent[/bold cyan]")
+        console.print("[5/5] Running grounding audit...")
+        grounding_result = audit_grounding(query, final_md, chunks)
+        _write_text(path_grounding, grounding_result.model_dump_json(indent=2))
+        console.print(
+            f"  [green]Saved[/green] {path_grounding} "
+            f"(grounding_score={grounding_result.grounding_score})"
+        )
+
         summary = _run_summary(
-            query, chunks, evaluation_json, draft, final_md, revision_skipped=revision_skipped
+            query,
+            chunks,
+            evaluation_json,
+            draft,
+            final_md,
+            revision_skipped=revision_skipped,
+            grounding_score=grounding_result.grounding_score,
         )
         _write_text(path_summary, json.dumps(summary, indent=2))
         console.print(f"  [green]Saved[/green] {path_summary}")

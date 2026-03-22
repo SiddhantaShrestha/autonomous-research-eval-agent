@@ -1,5 +1,6 @@
 """
-CLI entrypoint: orchestrate retrieval, draft, evaluation, conditional revision, and outputs.
+CLI entrypoint: orchestrate retrieval, draft, evaluation, conditional revision,
+grounding audit, and run summary (see ``pipeline.run_research_pipeline``).
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ _SRC = Path(__file__).resolve().parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from agents.grounding_agent import audit_grounding  # noqa: F401
 from pipeline import run_research_pipeline  # noqa: E402
 
 rich_traceback_install(show_locals=False)
@@ -24,7 +26,7 @@ console = Console()
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Research evaluation agent: draft, evaluate, revise using Groq."
+        description="Research evaluation agent: draft, evaluate, revise, grounding audit (Groq)."
     )
     parser.add_argument(
         "query",
