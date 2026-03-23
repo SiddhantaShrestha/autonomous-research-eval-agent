@@ -28,9 +28,9 @@ export function ResearchInputCard({
     <section className="rounded-2xl border border-surface-border bg-surface-raised/80 p-6 shadow-card backdrop-blur-sm md:p-8">
       <div className="mx-auto max-w-3xl space-y-6">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
-            Research evaluation
-          </h1>
+          <h2 className="text-2xl font-semibold tracking-tight text-white md:text-3xl">
+            New evaluation
+          </h2>
           <p className="mt-2 text-sm leading-relaxed text-muted">
             Upload a source document, ask a question, and run the full pipeline: draft, quality
             evaluation, optional revision, and grounding audit — same engine as the CLI.
